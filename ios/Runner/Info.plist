@@ -47,6 +47,15 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to scan numbers for payment.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo library access to allow you to choose an image to scan.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>com.safaricom.mpesa.lifestyle</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

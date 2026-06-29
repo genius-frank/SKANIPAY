@@ -19,6 +19,7 @@ class ConfirmScreen extends StatefulWidget {
 class _ConfirmScreenState extends State<ConfirmScreen> {
   final TextEditingController _numberController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _accountController = TextEditingController();
 
   @override
   void initState() {
@@ -30,6 +31,7 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
   void dispose() {
     _numberController.dispose();
     _amountController.dispose();
+    _accountController.dispose();
     super.dispose();
   }
 
@@ -38,27 +40,85 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
     final amount = _amountController.text.trim();
 
     if (number.isEmpty || amount.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter both number and amount!'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showError('Please enter both number and amount!');
       return;
     }
 
+    // Try opening M-Pesa App first
     final Uri mpesaUri = Uri.parse('com.safaricom.mpesa.lifestyle://');
-    if (await canLaunchUrl(mpesaUri)) {
-      await launchUrl(mpesaUri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Mpesa app not found. Please open Mpesa manually.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+    try {
+      if (await canLaunchUrl(mpesaUri)) {
+        await launchUrl(mpesaUri, mode: LaunchMode.externalApplication);
+        return;
       }
+    } catch (e) {
+      debugPrint('Error launching M-Pesa app: $e');
+    }
+
+    // Fallback to USSD or SIM Toolkit approach if possible,
+    // or just show a message with instructions.
+    _showUSSDDialog(number, amount);
+  }
+
+  void _showUSSDDialog(String number, String amount) {
+    String ussdCode = '';
+    if (widget.serviceType == 'Buy Goods & Services') {
+      ussdCode = '*334*3*1*$number*$amount#';
+    } else if (widget.serviceType == 'Pay Bill') {
+      final account = _accountController.text.trim();
+      ussdCode = '*334*3*2*$number*$account*$amount#';
+    } else if (widget.serviceType == 'Withdraw Cash') {
+      ussdCode = '*334*7*1*$number*$amount#';
+    } else {
+      ussdCode = '*334#';
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('M-Pesa App Not Found'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Would you like to use the USSD shortcut instead?'),
+            const SizedBox(height: 12),
+            SelectableText(
+              ussdCode,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final Uri telUri = Uri.parse('tel:${ussdCode.replaceAll('#', '%23')}');
+              if (await canLaunchUrl(telUri)) {
+                await launchUrl(telUri);
+              } else {
+                _showError('Could not launch dialer.');
+              }
+            },
+            child: const Text('Dial USSD'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -145,6 +205,30 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
                         hintText: 'Number',
                       ),
                     ),
+                    if (widget.serviceType == 'Pay Bill') ...[
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Account Number',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.black45,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _accountController,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText: 'Enter account number',
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     const Text(
                       'Amount (KES)',
