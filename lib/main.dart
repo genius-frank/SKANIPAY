@@ -13,8 +13,11 @@ class SkaniPayApp extends StatelessWidget {
       title: 'SkaniPay',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        primaryColor: const Color(0xFF00A86B),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF00A86B),
+          primary: const Color(0xFF00A86B),
+          secondary: const Color(0xFF01D277),
         ),
         useMaterial3: true,
       ),
@@ -46,16 +49,19 @@ class HomeScreen extends StatelessWidget {
               const Text(
                 'SkaniPay',
                 style: TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 42,
+                  fontWeight: FontWeight.w900,
                   color: Colors.white,
+                  letterSpacing: -1.5,
                 ),
               ),
               const Text(
-                'Scan. Pay. Done.',
+                'Scan • Pay • Done',
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                   color: Colors.white70,
+                  letterSpacing: 2,
                 ),
               ),
               const SizedBox(height: 60),
@@ -162,14 +168,21 @@ class ServiceButton extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFF00A86B).withOpacity(0.1),
+                color: const Color(0xFF00A86B).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(

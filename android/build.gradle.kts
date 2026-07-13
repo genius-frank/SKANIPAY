@@ -5,20 +5,32 @@ allprojects {
     }
 }
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
-
+// Map the build directory for all subprojects to the root build folder
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
+    val subproject = this
+    subproject.layout.buildDirectory.value(rootProject.layout.projectDirectory.dir("../build/${subproject.name}"))
 }
+
 subprojects {
     project.evaluationDependsOn(":app")
 }
 
 tasks.register<Delete>("clean") {
+    description = "Cleans the build directory"
     delete(rootProject.layout.buildDirectory)
+}
+
+// Global configuration for all subprojects to fix lStar resource errors
+subprojects {
+    val subproject = this
+    if (!subproject.state.executed) {
+        subproject.afterEvaluate {
+            if (subproject.hasProperty("android")) {
+                val android = subproject.extensions.getByName("android")
+                if (android is com.android.build.gradle.BaseExtension) {
+                    android.compileSdkVersion(35)
+                }
+            }
+        }
+    }
 }
