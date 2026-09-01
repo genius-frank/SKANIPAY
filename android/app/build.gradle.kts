@@ -9,7 +9,7 @@ android {
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
-    // Using the official Java Toolchain property to enforce JVM 17 without script errors
+    // Enforce JVM 17 for compilation
     java {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(17))
