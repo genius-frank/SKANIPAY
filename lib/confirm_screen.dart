@@ -176,7 +176,7 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
                   child: const Text('CANCEL', style: TextStyle(color: Colors.black38, fontWeight: FontWeight.bold)),
                 ),
               ),
@@ -219,16 +219,21 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
 
   void _launchUSSD(String number, String amount) async {
     String ussdCode = '';
+    // Based on Safaricom *334# standard menu
     if (widget.serviceType == 'Buy Goods & Services') {
-      ussdCode = '*334*3*1*$number*$amount#';
+      ussdCode = '*334*5*1*$number*$amount#';
     } else if (widget.serviceType == 'Pay Bill') {
       final account = _accountController.text.trim();
-      ussdCode = '*334*3*2*$number*$account*$amount#';
+      ussdCode = '*334*5*2*$number*$account*$amount#';
     } else if (widget.serviceType == 'Withdraw Cash') {
       final store = _storeController.text.trim();
-      ussdCode = store.isNotEmpty ? '*334*7*1*$number*$store*$amount#' : '*334*7*1*$number*$amount#';
+      ussdCode = store.isNotEmpty ? '*334*2*1*$number*$store*$amount#' : '*334*2*1*$number*$amount#';
     } else if (widget.serviceType == 'Send Money') {
       ussdCode = '*334*1*1*$number*$amount#';
+    } else if (widget.serviceType == 'Pochi la Biashara') {
+      ussdCode = '*334*5*3*$number*$amount#';
+    } else if (widget.serviceType == 'Buy Airtime') {
+      ussdCode = '*334*3*2*$number*$amount#'; // Buy for other phone
     } else {
       ussdCode = '*334#';
     }

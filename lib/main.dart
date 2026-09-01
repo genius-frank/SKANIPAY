@@ -133,6 +133,11 @@ class HomeScreen extends StatelessWidget {
                         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen(serviceType: 'Pay Bill'))),
                       ),
                       GridServiceCard(
+                        icon: Icons.phone_android_rounded,
+                        label: 'Airtime',
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen(serviceType: 'Buy Airtime'))),
+                      ),
+                      GridServiceCard(
                         icon: Icons.account_balance_wallet_rounded,
                         label: 'Withdraw',
                         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen(serviceType: 'Withdraw Cash'))),
