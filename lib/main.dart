@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'scanner_screen.dart';
+import 'confirm_screen.dart';
+import 'transaction_storage.dart';
+
 void main() {
   runApp(const SkaniPayApp());
 }
@@ -26,13 +29,35 @@ class SkaniPayApp extends StatelessWidget {
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  List<PaymentTransaction> _recentTransactions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentTransactions();
+  }
+
+  Future<void> _loadRecentTransactions() async {
+    final list = await TransactionStorage.getRecentTransactions();
+    if (mounted) {
+      setState(() {
+        _recentTransactions = list;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9), // Modern Light Background
+      backgroundColor: const Color(0xFFF5F7F9),
       body: CustomScrollView(
         slivers: [
           // Professional App Bar with Gradient
@@ -80,13 +105,127 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
 
-          // Service Section
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(24.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Recent Transactions Section
+                  if (_recentTransactions.isNotEmpty) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Recent Scans',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            await TransactionStorage.clearHistory();
+                            _loadRecentTransactions();
+                          },
+                          child: const Text('Clear', style: TextStyle(color: Colors.black45)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 100,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _recentTransactions.length,
+                        separatorBuilder: (context, index) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) {
+                          final item = _recentTransactions[index];
+                          final displayName = item.recipientName.isNotEmpty
+                              ? item.recipientName
+                              : item.number;
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ConfirmScreen(
+                                    serviceType: item.serviceType,
+                                    scannedNumber: item.number,
+                                    scannedAccount: item.account,
+                                    scannedStore: item.store,
+                                  ),
+                                ),
+                              ).then((_) => _loadRecentTransactions());
+                            },
+                            child: Container(
+                              width: 150,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.03),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.history, size: 16, color: Color(0xFF00A86B)),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          item.serviceType,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF00A86B),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    displayName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: Colors.black87,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    item.number,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.black45,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // Quick Payments Section
                   const Text(
                     'Quick Payments',
                     style: TextStyle(
@@ -108,7 +247,14 @@ class HomeScreen extends StatelessWidget {
                     label: 'Send Money',
                     subtitle: 'Scan phone or speak number',
                     color: const Color(0xFF00A86B),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen(serviceType: 'Send Money'))),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ScannerScreen(serviceType: 'Send Money'),
+                        ),
+                      ).then((_) => _loadRecentTransactions());
+                    },
                   ),
                   
                   const SizedBox(height: 16),
@@ -125,27 +271,62 @@ class HomeScreen extends StatelessWidget {
                       GridServiceCard(
                         icon: Icons.store_rounded,
                         label: 'Buy Goods',
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen(serviceType: 'Buy Goods & Services'))),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ScannerScreen(serviceType: 'Buy Goods & Services'),
+                            ),
+                          ).then((_) => _loadRecentTransactions());
+                        },
                       ),
                       GridServiceCard(
                         icon: Icons.receipt_long_rounded,
                         label: 'Pay Bill',
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen(serviceType: 'Pay Bill'))),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ScannerScreen(serviceType: 'Pay Bill'),
+                            ),
+                          ).then((_) => _loadRecentTransactions());
+                        },
                       ),
                       GridServiceCard(
                         icon: Icons.phone_android_rounded,
                         label: 'Airtime',
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen(serviceType: 'Buy Airtime'))),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ScannerScreen(serviceType: 'Buy Airtime'),
+                            ),
+                          ).then((_) => _loadRecentTransactions());
+                        },
                       ),
                       GridServiceCard(
                         icon: Icons.account_balance_wallet_rounded,
                         label: 'Withdraw',
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen(serviceType: 'Withdraw Cash'))),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ScannerScreen(serviceType: 'Withdraw Cash'),
+                            ),
+                          ).then((_) => _loadRecentTransactions());
+                        },
                       ),
                       GridServiceCard(
                         icon: Icons.shopping_bag_rounded,
                         label: 'Pochi',
-                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen(serviceType: 'Pochi la Biashara'))),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ScannerScreen(serviceType: 'Pochi la Biashara'),
+                            ),
+                          ).then((_) => _loadRecentTransactions());
+                        },
                       ),
                     ],
                   ),

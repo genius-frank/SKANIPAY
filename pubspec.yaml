@@ -43,6 +43,7 @@ dependencies:
   path_provider: ^2.1.6
   speech_to_text: ^7.4.0
   fast_contacts: ^6.0.0
+  shared_preferences: ^2.3.2
 dev_dependencies:
   flutter_test:
     sdk: flutter

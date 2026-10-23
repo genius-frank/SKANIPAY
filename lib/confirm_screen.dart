@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fast_contacts/fast_contacts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'transaction_storage.dart';
 
 class ConfirmScreen extends StatefulWidget {
   final String serviceType;
@@ -205,6 +206,18 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
   }
 
   Future<void> _executePayment(String number, String amount) async {
+    // Save transaction to local history
+    await TransactionStorage.saveTransaction(
+      PaymentTransaction(
+        serviceType: widget.serviceType,
+        number: number,
+        account: _accountController.text.trim(),
+        store: _storeController.text.trim(),
+        recipientName: _recipientName,
+        timestamp: DateTime.now().toIso8601String(),
+      ),
+    );
+
     final Uri mpesaUri = Uri.parse('com.safaricom.mpesa.lifestyle://');
     try {
       if (await canLaunchUrl(mpesaUri)) {
@@ -369,6 +382,24 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
                       const SizedBox(height: 24),
                       _buildFieldLabel('Amount (KES)'),
                       _buildTextField(_amountController, '0.00', prefix: 'KES '),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        children: ['100', '500', '1000', '2000', '5000'].map((amt) {
+                          return ActionChip(
+                            label: Text('+$amt'),
+                            onPressed: () {
+                              setState(() {
+                                double current = double.tryParse(_amountController.text) ?? 0;
+                                _amountController.text = (current + double.parse(amt)).toStringAsFixed(0);
+                              });
+                            },
+                            backgroundColor: const Color(0xFF00A86B).withValues(alpha: 0.1),
+                            side: BorderSide.none,
+                            labelStyle: const TextStyle(color: Color(0xFF00A86B), fontWeight: FontWeight.bold, fontSize: 12),
+                          );
+                        }).toList(),
+                      ),
                     ],
                   ),
                 ),
