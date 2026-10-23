@@ -63,8 +63,8 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
 
         for (var contact in contacts) {
           for (var phone in contact.phones) {
-            final String? rawNum = phone.number;
-            if (rawNum == null || rawNum.isEmpty) continue;
+            final String rawNum = phone.number;
+            if (rawNum.isEmpty) continue;
             
             String normalizedContact = rawNum.replaceAll(RegExp(r'[^\d]'), '');
             if (normalizedContact.startsWith('254')) normalizedContact = '0${normalizedContact.substring(3)}';
@@ -72,7 +72,7 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
             if (normalizedContact == normalizedScanned || normalizedContact.endsWith(normalizedScanned.substring(1))) {
               if (mounted) {
                 setState(() {
-                  _recipientName = contact.displayName ?? '';
+                  _recipientName = contact.displayName;
                 });
               }
               return;
