@@ -47,19 +47,27 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       _isCameraInitialized = false;
     });
 
+    if (kIsWeb) {
+      if (mounted) {
+        setState(() {
+          _cameraErrorMessage =
+              'Live Camera AI OCR is optimized for the Native Android Mobile App! On Web, tap "Choose Photo from Gallery" to upload a receipt photo, or install the Android APK.';
+        });
+      }
+      return;
+    }
+
     try {
       // 1. Check/request camera permission on mobile
-      if (!kIsWeb) {
-        final status = await Permission.camera.request();
-        if (!status.isGranted) {
-          if (mounted) {
-            setState(() {
-              _cameraErrorMessage =
-                  'Camera permission was denied. Please allow camera access in app settings to scan.';
-            });
-          }
-          return;
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          setState(() {
+            _cameraErrorMessage =
+                'Camera permission was denied. Please allow camera access in app settings to scan.';
+          });
         }
+        return;
       }
 
       // 2. Fetch available cameras
