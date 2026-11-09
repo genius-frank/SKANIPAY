@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'confirm_screen.dart';
 import 'dart:io';
@@ -18,6 +20,7 @@ class ScannerScreen extends StatefulWidget {
 class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserver {
   CameraController? _controller;
   bool _isCameraInitialized = false;
+  String? _cameraErrorMessage;
   bool _isProcessing = false;
   bool _isFlashOn = false;
   final TextRecognizer _textRecognizer = TextRecognizer();
@@ -29,7 +32,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   // For stabilization
   Map<String, String> _lastDetectedData = {};
   int _stabilityCount = 0;
-  static const int _requiredStability = 2; // Reduced slightly for better feel when scanning two things
+  static const int _requiredStability = 2;
 
   @override
   void initState() {
@@ -39,35 +42,74 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   }
 
   Future<void> _initializeCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
-
-    final camera = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.back,
-      orElse: () => cameras.first,
-    );
-
-    _controller = CameraController(
-      camera,
-      ResolutionPreset.medium, // Lower resolution for faster real-time processing
-      enableAudio: false,
-      imageFormatGroup: Platform.isAndroid
-          ? ImageFormatGroup.nv21
-          : ImageFormatGroup.bgra8888,
-    );
+    setState(() {
+      _cameraErrorMessage = null;
+      _isCameraInitialized = false;
+    });
 
     try {
+      // 1. Check/request camera permission on mobile
+      if (!kIsWeb) {
+        final status = await Permission.camera.request();
+        if (!status.isGranted) {
+          if (mounted) {
+            setState(() {
+              _cameraErrorMessage =
+                  'Camera permission was denied. Please allow camera access in app settings to scan.';
+            });
+          }
+          return;
+        }
+      }
+
+      // 2. Fetch available cameras
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _cameraErrorMessage = 'No active camera found on this device.';
+          });
+        }
+        return;
+      }
+
+      final camera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      _controller = CameraController(
+        camera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: (!kIsWeb && Platform.isAndroid)
+            ? ImageFormatGroup.nv21
+            : ImageFormatGroup.bgra8888,
+      );
+
       await _controller!.initialize();
       if (!mounted) return;
 
-      // Optimize camera settings
-      await _controller!.setFocusMode(FocusMode.auto);
-      await _controller!.setExposureMode(ExposureMode.auto);
+      try {
+        await _controller!.setFocusMode(FocusMode.auto);
+        await _controller!.setExposureMode(ExposureMode.auto);
+      } catch (_) {}
 
-      setState(() => _isCameraInitialized = true);
-      _startImageStream();
+      setState(() {
+        _isCameraInitialized = true;
+        _cameraErrorMessage = null;
+      });
+
+      if (!kIsWeb) {
+        _startImageStream();
+      }
     } catch (e) {
       debugPrint('Camera initialization error: $e');
+      if (mounted) {
+        setState(() {
+          _cameraErrorMessage = 'Could not access camera: ${e.toString()}';
+        });
+      }
     }
   }
 
@@ -102,18 +144,16 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       return;
     }
 
-    // For Paybill, we ideally want BOTH numbers. If only one is found, we keep looking.
     if (widget.serviceType == 'Pay Bill') {
       bool hasPaybill = extractedData.containsKey('number');
       bool hasAccount = extractedData.containsKey('account');
-      
+
       if (!hasPaybill && !hasAccount) {
         _stabilityCount = 0;
         return;
       }
     }
 
-    // Check if the current detection matches the last one
     bool isSame = true;
     if (_lastDetectedData.length != extractedData.length) {
       isSame = false;
@@ -131,13 +171,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     }
 
     if (_stabilityCount >= _requiredStability) {
-      // Logic for "Pay Bill": If we have both, proceed. If we only have Paybill for a long time, proceed anyway.
       if (widget.serviceType == 'Pay Bill') {
         if (extractedData.containsKey('number') && extractedData.containsKey('account')) {
           HapticFeedback.heavyImpact();
           _onDataConfirmed(extractedData);
         } else if (_stabilityCount > 8 && extractedData.containsKey('number')) {
-          // Fallback: we found the paybill but couldn't find the account after 8 stable frames
           HapticFeedback.mediumImpact();
           _onDataConfirmed(extractedData);
         }
@@ -151,19 +189,14 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   Map<String, String> _extractData(String text) {
     Map<String, String> result = {};
     String upperText = text.toUpperCase();
-    
-    // 1. Clean the text but keep context (letters, digits, colon, slash)
+
     String cleanText = upperText.replaceAll(RegExp(r'[^A-Z0-9\s:/]'), ' ');
     final List<String> lines = cleanText.split('\n').map((l) => l.trim()).toList();
-    
-    // helper to find number near a label
+
     String? findValueAfter(String line, List<String> labels, {bool onlyDigits = false, int minLen = 4}) {
       for (var label in labels) {
         if (line.contains(label)) {
-          // Look for the first alphanumeric block after the label in the same line
-          // e.g. "ACC: 12345" or "ACCOUNT NO 12345"
           String afterLabel = line.substring(line.indexOf(label) + label.length);
-          // Remove noise like "NO", "NUMBER", "#", ":", "/"
           String valuesOnly = afterLabel.replaceAll(RegExp(r'(?:NO|NUMBER|#|:|/)'), ' ').trim();
           List<String> parts = valuesOnly.split(RegExp(r'\s+'));
           for (var p in parts) {
@@ -172,7 +205,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                 String digits = p.replaceAll(RegExp(r'[^0-9]'), '');
                 if (digits.length >= minLen) return digits;
               } else {
-                // Ensure it's not a noise word
                 if (p != 'OUNT' && p != 'OUNTNO' && p != 'ACCOUNT') return p;
               }
             }
@@ -208,7 +240,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       }
     }
 
-    // Final Fallback: If no labels found, look for raw numeric sequences
     if (result['number'] == null) {
       List<String> words = cleanText.split(RegExp(r'\s+'));
       for (String word in words) {
@@ -228,13 +259,15 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         }
       }
     }
-    
+
     return result;
   }
 
   void _onDataConfirmed(Map<String, String> data) {
     if (!mounted) return;
-    _controller?.stopImageStream();
+    try {
+      _controller?.stopImageStream();
+    } catch (_) {}
 
     Navigator.push(
       context,
@@ -249,15 +282,17 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     ).then((_) {
       _stabilityCount = 0;
       _lastDetectedData = {};
-      _startImageStream();
+      if (!kIsWeb) {
+        _startImageStream();
+      }
     });
   }
 
   InputImage? _inputImageFromCameraImage(CameraImage image) {
-    if (_controller == null) return null;
+    if (_controller == null || kIsWeb) return null;
 
     InputImageRotation? rotation;
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       var rotationValue = _controller!.value.deviceOrientation;
       switch (rotationValue) {
         case DeviceOrientation.portraitUp:
@@ -273,7 +308,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
           rotation = InputImageRotation.rotation180deg;
           break;
       }
-    } else if (Platform.isIOS) {
+    } else if (!kIsWeb && Platform.isIOS) {
       rotation = InputImageRotation.rotation0deg;
     }
 
@@ -281,8 +316,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
     if (format == null ||
-        (Platform.isAndroid && format != InputImageFormat.nv21) ||
-        (Platform.isIOS && format != InputImageFormat.bgra8888)) {
+        (!kIsWeb && Platform.isAndroid && format != InputImageFormat.nv21) ||
+        (!kIsWeb && Platform.isIOS && format != InputImageFormat.bgra8888)) {
       return null;
     }
 
@@ -302,11 +337,15 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   Future<void> _toggleFlash() async {
     if (_controller == null) return;
-    _isFlashOn = !_isFlashOn;
-    await _controller!.setFlashMode(
-      _isFlashOn ? FlashMode.torch : FlashMode.off,
-    );
-    setState(() {});
+    try {
+      _isFlashOn = !_isFlashOn;
+      await _controller!.setFlashMode(
+        _isFlashOn ? FlashMode.torch : FlashMode.off,
+      );
+      setState(() {});
+    } catch (e) {
+      debugPrint('Flash error: $e');
+    }
   }
 
   Future<void> _pickFromGallery() async {
@@ -350,7 +389,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   }
 
   void _processVoiceResult(String text) {
-    // Look for numbers in the speech
     String digits = text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.length >= 10 && (digits.startsWith('07') || digits.startsWith('01') || digits.startsWith('254'))) {
       HapticFeedback.heavyImpact();
@@ -385,10 +423,88 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   @override
   Widget build(BuildContext context) {
+    if (_cameraErrorMessage != null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF121212),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(widget.serviceType, style: const TextStyle(color: Colors.white)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.camera_alt_outlined, size: 72, color: Colors.white54),
+                const SizedBox(height: 24),
+                const Text(
+                  'Camera Access Required',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _cameraErrorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00A86B),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: _initializeCamera,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Try Again', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white38),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: _pickFromGallery,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('Choose Photo from Gallery'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (!_isCameraInitialized) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF00A86B)),
+              SizedBox(height: 16),
+              Text('Starting camera...', style: TextStyle(color: Colors.white70)),
+            ],
+          ),
+        ),
       );
     }
 
@@ -449,10 +565,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   }
 
   Widget _buildScannerOverlay() {
-    bool foundBoth = widget.serviceType == 'Pay Bill' && 
-                     _lastDetectedData.containsKey('number') && 
-                     _lastDetectedData.containsKey('account');
-                     
+    bool foundBoth = widget.serviceType == 'Pay Bill' &&
+        _lastDetectedData.containsKey('number') &&
+        _lastDetectedData.containsKey('account');
+
     return Column(
       children: [
         const SizedBox(height: 24),
@@ -481,9 +597,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              foundBoth 
-                ? 'Paybill & Account Found!' 
-                : 'Scanning for payment numbers...',
+              foundBoth ? 'Paybill & Account Found!' : 'Scanning for payment numbers...',
               style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
             ),
           ),
@@ -491,9 +605,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             Padding(
               padding: const EdgeInsets.only(top: 8.0),
               child: Text(
-                _lastDetectedData.containsKey('number') 
-                  ? 'Found Paybill, looking for Account...' 
-                  : 'Aim at both Paybill and Account No.',
+                _lastDetectedData.containsKey('number')
+                    ? 'Found Paybill, looking for Account...'
+                    : 'Aim at both Paybill and Account No.',
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ),
@@ -516,7 +630,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
           _CircleButton(
             icon: Icons.center_focus_strong,
             onTap: () async {
-              // Manual scan trigger
               if (_isProcessing) return;
               _isProcessing = true;
               try {
@@ -534,6 +647,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                     );
                   }
                 }
+              } catch (e) {
+                debugPrint('Take picture error: $e');
               } finally {
                 _isProcessing = false;
               }
