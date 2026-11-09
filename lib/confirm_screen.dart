@@ -4,6 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fast_contacts/fast_contacts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'transaction_storage.dart';
+import 'mpesa_tariff_calculator.dart';
+import 'mpesa_stk_service.dart';
 
 class ConfirmScreen extends StatefulWidget {
   final String serviceType;
@@ -29,6 +31,7 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
   final TextEditingController _accountController = TextEditingController();
   final TextEditingController _storeController = TextEditingController();
   String _recipientName = '';
+  bool _isStkLoading = false;
 
   @override
   void initState() {
@@ -47,6 +50,10 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
       if (widget.serviceType == 'Send Money' || widget.serviceType == 'Pochi la Biashara') {
         _lookupContact(_numberController.text);
       }
+    });
+
+    _amountController.addListener(() {
+      setState(() {});
     });
   }
 
@@ -99,6 +106,50 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
     _accountController.dispose();
     _storeController.dispose();
     super.dispose();
+  }
+
+  Future<void> _triggerStkPush() async {
+    final number = _numberController.text.trim();
+    final amount = _amountController.text.trim();
+
+    if (number.isEmpty || amount.isEmpty) {
+      _showError('Please enter both number and amount!');
+      return;
+    }
+
+    setState(() => _isStkLoading = true);
+
+    final result = await MpesaStkService.triggerStkPush(
+      phoneNumber: number,
+      amount: amount,
+      accountRef: _accountController.text.trim(),
+    );
+
+    if (mounted) {
+      setState(() => _isStkLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: result.success ? const Color(0xFF00A86B) : Colors.black87,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+
+      if (result.success) {
+        await TransactionStorage.saveTransaction(
+          PaymentTransaction(
+            serviceType: widget.serviceType,
+            number: number,
+            account: _accountController.text.trim(),
+            store: _storeController.text.trim(),
+            recipientName: _recipientName,
+            timestamp: DateTime.now().toIso8601String(),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _openMpesa() async {
@@ -232,7 +283,6 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
 
   void _launchUSSD(String number, String amount) async {
     String ussdCode = '';
-    // Based on Safaricom *334# standard menu
     if (widget.serviceType == 'Buy Goods & Services') {
       ussdCode = '*334*5*1*$number*$amount#';
     } else if (widget.serviceType == 'Pay Bill') {
@@ -246,7 +296,7 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
     } else if (widget.serviceType == 'Pochi la Biashara') {
       ussdCode = '*334*5*3*$number*$amount#';
     } else if (widget.serviceType == 'Buy Airtime') {
-      ussdCode = '*334*3*2*$number*$amount#'; // Buy for other phone
+      ussdCode = '*334*3*2*$number*$amount#';
     } else {
       ussdCode = '*334#';
     }
@@ -287,6 +337,12 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final double amt = double.tryParse(_amountController.text.trim()) ?? 0;
+    final int estFee = MpesaTariffCalculator.calculateTransferFee(
+      amt,
+      isWithdrawal: widget.serviceType == 'Withdraw Cash',
+    );
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F9),
       appBar: AppBar(
@@ -385,13 +441,13 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
                       const SizedBox(height: 12),
                       Wrap(
                         spacing: 8,
-                        children: ['100', '500', '1000', '2000', '5000'].map((amt) {
+                        children: ['100', '500', '1000', '2000', '5000'].map((amtStr) {
                           return ActionChip(
-                            label: Text('+$amt'),
+                            label: Text('+$amtStr'),
                             onPressed: () {
                               setState(() {
                                 double current = double.tryParse(_amountController.text) ?? 0;
-                                _amountController.text = (current + double.parse(amt)).toStringAsFixed(0);
+                                _amountController.text = (current + double.parse(amtStr)).toStringAsFixed(0);
                               });
                             },
                             backgroundColor: const Color(0xFF00A86B).withValues(alpha: 0.1),
@@ -400,38 +456,99 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
                           );
                         }).toList(),
                       ),
+
+                      // Fee Estimate Box
+                      if (amt > 0) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0FDF4),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFF00A86B).withValues(alpha: 0.2)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.account_balance_wallet_outlined, size: 16, color: Color(0xFF00A86B)),
+                              const SizedBox(width: 8),
+                              Text(
+                                amt <= 100
+                                    ? 'M-Pesa Transfer Fee: FREE (KES 0)'
+                                    : 'Estimated Transfer Fee: KES $estFee',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF00A86B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
                 
                 const SizedBox(height: 32),
                 
-                // Action Buttons
+                // STK Push Prompt Button
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00A86B),
                     foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 64),
+                    minimumSize: const Size(double.infinity, 60),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    elevation: 8,
+                    elevation: 6,
                     shadowColor: const Color(0xFF00A86B).withValues(alpha: 0.4),
+                  ),
+                  onPressed: _isStkLoading ? null : _triggerStkPush,
+                  child: _isStkLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.touch_app_rounded, size: 22),
+                            SizedBox(width: 10),
+                            Text(
+                              'STK PUSH (M-PESA POP-UP)',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                            ),
+                          ],
+                        ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Standard Open M-Pesa / USSD Button
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 56),
+                    side: const BorderSide(color: Color(0xFF00A86B)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                   ),
                   onPressed: _openMpesa,
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.lock_outline_rounded, size: 20),
-                      SizedBox(width: 12),
-                      Text('PROCEED SECURELY', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      Icon(Icons.phone_in_talk_rounded, color: Color(0xFF00A86B), size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'OPEN M-PESA APP / DIAL USSD',
+                        style: TextStyle(color: Color(0xFF00A86B), fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
                     ],
                   ),
                 ),
                 
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 
                 OutlinedButton(
                   style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 64),
+                    minimumSize: const Size(double.infinity, 56),
                     side: BorderSide(color: Colors.black.withValues(alpha: 0.1)),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                   ),

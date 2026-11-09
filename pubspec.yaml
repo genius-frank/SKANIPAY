@@ -44,6 +44,8 @@ dependencies:
   speech_to_text: ^7.4.0
   fast_contacts: ^6.0.0
   shared_preferences: ^2.3.2
+  http: ^1.2.1
+  qr_flutter: ^4.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

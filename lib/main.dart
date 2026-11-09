@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'scanner_screen.dart';
 import 'confirm_screen.dart';
 import 'transaction_storage.dart';
+import 'my_qr_screen.dart';
+import 'history_screen.dart';
 
 void main() {
   runApp(const SkaniPayApp());
@@ -60,12 +62,34 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: const Color(0xFFF5F7F9),
       body: CustomScrollView(
         slivers: [
-          // Professional App Bar with Gradient
+          // Professional App Bar with Gradient & Actions
           SliverAppBar(
             expandedHeight: 180.0,
             floating: false,
             pinned: true,
             backgroundColor: const Color(0xFF00A86B),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.qr_code_2_rounded, color: Colors.white),
+                tooltip: 'My QR Code',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const MyQrScreen()),
+                  );
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.history_rounded, color: Colors.white),
+                tooltip: 'History',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                  ).then((_) => _loadRecentTransactions());
+                },
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: const BoxDecoration(
@@ -78,13 +102,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: const Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(height: 40),
-                    Icon(Icons.document_scanner, size: 60, color: Colors.white),
-                    SizedBox(height: 12),
+                    SizedBox(height: 30),
+                    Icon(Icons.document_scanner, size: 54, color: Colors.white),
+                    SizedBox(height: 8),
                     Text(
                       'SkaniPay',
                       style: TextStyle(
-                        fontSize: 32,
+                        fontSize: 30,
                         fontWeight: FontWeight.w900,
                         color: Colors.white,
                         letterSpacing: -1.0,
@@ -111,6 +135,103 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Top Banner Actions: My QR Code & Full History
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const MyQrScreen()),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFE8F5E9),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF00A86B), size: 24),
+                                ),
+                                const SizedBox(width: 12),
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('My QR Code', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                    Text('Receive money', style: TextStyle(fontSize: 11, color: Colors.black45)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                            ).then((_) => _loadRecentTransactions());
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFE8F5E9),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.history_rounded, color: Color(0xFF00A86B), size: 24),
+                                ),
+                                const SizedBox(width: 12),
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('History', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                    Text('Past payments', style: TextStyle(fontSize: 11, color: Colors.black45)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
                   // Recent Transactions Section
                   if (_recentTransactions.isNotEmpty) ...[
                     Row(
@@ -125,11 +246,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         TextButton(
-                          onPressed: () async {
-                            await TransactionStorage.clearHistory();
-                            _loadRecentTransactions();
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                            ).then((_) => _loadRecentTransactions());
                           },
-                          child: const Text('Clear', style: TextStyle(color: Colors.black45)),
+                          child: const Text('See All', style: TextStyle(color: Color(0xFF00A86B), fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
