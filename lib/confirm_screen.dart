@@ -108,6 +108,89 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
     super.dispose();
   }
 
+  Future<void> _showDarajaSettingsDialog() async {
+    final keys = await MpesaStkService.getDarajaKeys();
+    final keyCtrl = TextEditingController(text: keys['consumerKey']);
+    final secretCtrl = TextEditingController(text: keys['consumerSecret']);
+    final shortCodeCtrl = TextEditingController(text: keys['shortCode']);
+    final passkeyCtrl = TextEditingController(text: keys['passkey']);
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.vpn_key_rounded, color: Color(0xFF00A86B)),
+            SizedBox(width: 8),
+            Text('Safaricom Daraja Keys', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter your Safaricom Daraja Developer API keys from developer.safaricom.co.ke to enable direct STK Push prompts.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: keyCtrl,
+                decoration: const InputDecoration(labelText: 'Consumer Key', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: secretCtrl,
+                decoration: const InputDecoration(labelText: 'Consumer Secret', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: shortCodeCtrl,
+                decoration: const InputDecoration(labelText: 'Business ShortCode / Till', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passkeyCtrl,
+                decoration: const InputDecoration(labelText: 'Passkey (Optional)', border: OutlineInputBorder()),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00A86B),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              await MpesaStkService.saveDarajaKeys(
+                consumerKey: keyCtrl.text,
+                consumerSecret: secretCtrl.text,
+                shortCode: shortCodeCtrl.text,
+                passkey: passkeyCtrl.text,
+              );
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Daraja API keys saved successfully!')),
+                );
+              }
+            },
+            child: const Text('SAVE KEYS'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _triggerStkPush() async {
     final number = _numberController.text.trim();
     final amount = _amountController.text.trim();
@@ -128,14 +211,30 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
     if (mounted) {
       setState(() => _isStkLoading = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message),
-          backgroundColor: result.success ? const Color(0xFF00A86B) : Colors.black87,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+      if (result.requiresKeys) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            backgroundColor: Colors.black87,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 6),
+            action: SnackBarAction(
+              label: 'SET KEYS',
+              textColor: const Color(0xFF00A86B),
+              onPressed: _showDarajaSettingsDialog,
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            backgroundColor: result.success ? const Color(0xFF00A86B) : Colors.black87,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
 
       if (result.success) {
         await TransactionStorage.saveTransaction(
@@ -356,6 +455,13 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
           widget.serviceType,
           style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 18),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.vpn_key_outlined, color: Colors.black87),
+            tooltip: 'Configure Daraja Keys',
+            onPressed: _showDarajaSettingsDialog,
+          ),
+        ],
         centerTitle: true,
       ),
       body: SafeArea(

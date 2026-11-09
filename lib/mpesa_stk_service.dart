@@ -1,41 +1,70 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MpesaStkResult {
   final bool success;
   final String message;
   final String? checkoutRequestId;
+  final bool requiresKeys;
 
   MpesaStkResult({
     required this.success,
     required this.message,
     this.checkoutRequestId,
+    this.requiresKeys = false,
   });
 }
 
 class MpesaStkService {
-  // Default Safaricom Daraja Sandbox credentials for testing
-  static const String _defaultConsumerKey = 'c7aL0gQ2F5F4B3A2C1D0E9F8A7B6C5D4';
-  static const String _defaultConsumerSecret = 'a1B2c3D4e5F6g7H8';
-  static const String _defaultBusinessShortCode = '174379';
-  static const String _defaultPasskey =
-      'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919';
+  static const String _keyConsumerKey = 'daraja_consumer_key';
+  static const String _keyConsumerSecret = 'daraja_consumer_secret';
+  static const String _keyShortCode = 'daraja_shortcode';
+  static const String _keyPasskey = 'daraja_passkey';
+
+  static Future<void> saveDarajaKeys({
+    required String consumerKey,
+    required String consumerSecret,
+    required String shortCode,
+    required String passkey,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyConsumerKey, consumerKey.trim());
+    await prefs.setString(_keyConsumerSecret, consumerSecret.trim());
+    await prefs.setString(_keyShortCode, shortCode.trim());
+    await prefs.setString(_keyPasskey, passkey.trim());
+  }
+
+  static Future<Map<String, String>> getDarajaKeys() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'consumerKey': prefs.getString(_keyConsumerKey) ?? '',
+      'consumerSecret': prefs.getString(_keyConsumerSecret) ?? '',
+      'shortCode': prefs.getString(_keyShortCode) ?? '',
+      'passkey': prefs.getString(_keyPasskey) ?? '',
+    };
+  }
 
   /// Sends an STK Push prompt directly to the specified phone number.
   static Future<MpesaStkResult> triggerStkPush({
     required String phoneNumber,
     required String amount,
     required String accountRef,
-    String? consumerKey,
-    String? consumerSecret,
-    String? businessShortCode,
-    String? passkey,
   }) async {
-    final key = (consumerKey != null && consumerKey.isNotEmpty) ? consumerKey : _defaultConsumerKey;
-    final secret = (consumerSecret != null && consumerSecret.isNotEmpty) ? consumerSecret : _defaultConsumerSecret;
-    final shortCode = (businessShortCode != null && businessShortCode.isNotEmpty) ? businessShortCode : _defaultBusinessShortCode;
-    final pass = (passkey != null && passkey.isNotEmpty) ? passkey : _defaultPasskey;
+    final storedKeys = await getDarajaKeys();
+    final key = storedKeys['consumerKey'] ?? '';
+    final secret = storedKeys['consumerSecret'] ?? '';
+    final shortCode = storedKeys['shortCode'] ?? '';
+    final pass = storedKeys['passkey'] ?? '';
+
+    if (key.isEmpty || secret.isEmpty) {
+      return MpesaStkResult(
+        success: false,
+        requiresKeys: true,
+        message: 'Safaricom Daraja API keys required. Please tap "Configure Daraja Keys" or use M-Pesa App/USSD.',
+      );
+    }
 
     // Normalize phone number to format 2547XXXXXXXX or 2541XXXXXXXX
     String formattedPhone = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
@@ -63,7 +92,8 @@ class MpesaStkService {
       if (authResponse.statusCode != 200) {
         return MpesaStkResult(
           success: false,
-          message: 'Safaricom Authentication Failed. Please check Daraja API keys.',
+          requiresKeys: true,
+          message: 'Safaricom Auth Failed. Please verify your Consumer Key & Secret.',
         );
       }
 
@@ -78,13 +108,13 @@ class MpesaStkService {
 
       // 3. Send STK Push Request
       final stkPayload = {
-        "BusinessShortCode": shortCode,
+        "BusinessShortCode": shortCode.isNotEmpty ? shortCode : "174379",
         "Password": password,
         "Timestamp": timestamp,
         "TransactionType": "CustomerPayBillOnline",
         "Amount": amount,
         "PartyA": formattedPhone,
-        "PartyB": shortCode,
+        "PartyB": shortCode.isNotEmpty ? shortCode : "174379",
         "PhoneNumber": formattedPhone,
         "CallBackURL": "https://mydomain.com/pat",
         "AccountReference": accountRef.isNotEmpty ? accountRef : "SkaniPay",
@@ -105,7 +135,7 @@ class MpesaStkService {
       if (resData['ResponseCode'] == '0') {
         return MpesaStkResult(
           success: true,
-          message: 'STK Push sent to $formattedPhone! Enter M-Pesa PIN on your phone.',
+          message: 'STK Push sent to $formattedPhone! Enter your M-Pesa PIN.',
           checkoutRequestId: resData['CheckoutRequestID'],
         );
       } else {
