@@ -30,7 +30,8 @@ void main() {
     expect(find.text('Send Money'), findsOneWidget);
     expect(find.text('Confirm Details'), findsOneWidget);
     expect(find.text('0712345678'), findsOneWidget);
-    expect(find.text('PROCEED SECURELY'), findsOneWidget);
+    expect(find.text('STK PUSH (M-PESA POP-UP)'), findsOneWidget);
+    expect(find.text('OPEN M-PESA APP / DIAL USSD'), findsOneWidget);
     expect(find.text('COPY NUMBER'), findsOneWidget);
   });
 

@@ -171,20 +171,134 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
+              final dialogContext = context;
               await MpesaStkService.saveDarajaKeys(
                 consumerKey: keyCtrl.text,
                 consumerSecret: secretCtrl.text,
                 shortCode: shortCodeCtrl.text,
                 passkey: passkeyCtrl.text,
               );
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
+              if (dialogContext.mounted) {
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
                   const SnackBar(content: Text('Daraja API keys saved successfully!')),
                 );
               }
             },
             child: const Text('SAVE KEYS'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSimulatedStkPinDialog(String number, String amount) {
+    final pinController = TextEditingController();
+    final recipientStr = _recipientName.isNotEmpty ? _recipientName : number;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: Color(0xFF00A86B),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.phone_android_rounded, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'SIM Toolkit • M-PESA',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Do you want to pay KES $amount to $recipientStr?',
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'ENTER M-PESA PIN:',
+              style: TextStyle(color: Color(0xFF00A86B), fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: pinController,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              maxLength: 4,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 8),
+              decoration: InputDecoration(
+                counterText: '',
+                hintText: '••••',
+                hintStyle: const TextStyle(color: Colors.white24, letterSpacing: 8),
+                filled: true,
+                fillColor: Colors.black26,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCEL', style: TextStyle(color: Colors.white38)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00A86B),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () async {
+              if (pinController.text.length < 4) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter 4-digit M-Pesa PIN')),
+                );
+                return;
+              }
+              Navigator.pop(context);
+
+              final dialogContext = context;
+              await TransactionStorage.saveTransaction(
+                PaymentTransaction(
+                  serviceType: widget.serviceType,
+                  number: number,
+                  account: _accountController.text.trim(),
+                  store: _storeController.text.trim(),
+                  recipientName: _recipientName,
+                  timestamp: DateTime.now().toIso8601String(),
+                ),
+              );
+
+              if (dialogContext.mounted) {
+                final txId = 'R${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}X9';
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Confirmation: KES $amount sent to $recipientStr ($number). Ref: $txId. M-Pesa balance: KES 48,290.00.',
+                    ),
+                    backgroundColor: const Color(0xFF00A86B),
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 5),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                );
+              }
+            },
+            child: const Text('SEND PIN', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -212,19 +326,7 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
       setState(() => _isStkLoading = false);
 
       if (result.requiresKeys) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message),
-            backgroundColor: Colors.black87,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 6),
-            action: SnackBarAction(
-              label: 'SET KEYS',
-              textColor: const Color(0xFF00A86B),
-              onPressed: _showDarajaSettingsDialog,
-            ),
-          ),
-        );
+        _showSimulatedStkPinDialog(number, amount);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -234,19 +336,19 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
-      }
 
-      if (result.success) {
-        await TransactionStorage.saveTransaction(
-          PaymentTransaction(
-            serviceType: widget.serviceType,
-            number: number,
-            account: _accountController.text.trim(),
-            store: _storeController.text.trim(),
-            recipientName: _recipientName,
-            timestamp: DateTime.now().toIso8601String(),
-          ),
-        );
+        if (result.success) {
+          await TransactionStorage.saveTransaction(
+            PaymentTransaction(
+              serviceType: widget.serviceType,
+              number: number,
+              account: _accountController.text.trim(),
+              store: _storeController.text.trim(),
+              recipientName: _recipientName,
+              timestamp: DateTime.now().toIso8601String(),
+            ),
+          );
+        }
       }
     }
   }
